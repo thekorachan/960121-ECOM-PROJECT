@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MONOFORM | Minimal Fashion</title>
-  <link rel="stylesheet" href="960121-ECOM-PROJECT\styles.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="promo" role="status" aria-label="Current promotions">
@@ -62,10 +62,10 @@
         <p>Clean silhouettes, neutral shades, and tactile basics designed to work together without effort.</p>
       </div>
       <div class="products-toolbar">
-        <span>8 items</span>
+        <span id="products-count">Loading items</span>
         <span>Filter & sort</span>
       </div>
-      <div class="product-grid">
+      <div class="product-grid" id="products-grid">
         <article class="product-card">
           <div class="product-media">
             <img src="https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=900&q=85" alt="Folded neutral cotton shirt">
@@ -198,11 +198,11 @@
     <span>Shipping / Returns / Privacy / Contact</span>
   </footer>
 
-  <script src="client/js/api.js"></script>
-  <script src="client/js/products.js"></script>
-  <script src="client/js/cart.js"></script>
-  <script src="client/js/auth.js"></script>
-  <script src="client/js/checkout.js"></script>
-  <script src="client/js/app.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/products.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/checkout.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

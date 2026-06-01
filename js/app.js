@@ -70,7 +70,7 @@
   };
 
   const init = () => {
-    window.productService.loadProducts();
+    window.productService.renderProducts();
     window.cartService.updateBagCount();
     document.addEventListener("click", handleProductClick);
     setupSignupForm();
