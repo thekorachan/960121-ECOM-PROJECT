@@ -198,48 +198,11 @@
     <span>Shipping / Returns / Privacy / Contact</span>
   </footer>
 
-  <script>
-    const bagCount = document.querySelector("#bag-count");
-    const addButtons = document.querySelectorAll(".add-button");
-    const signup = document.querySelector(".signup");
-    const siteHeader = document.querySelector(".site-header");
-    let count = 0;
-    let lastScrollY = window.scrollY;
-
-    addButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        count += 1;
-        bagCount.textContent = count;
-        button.textContent = "Added";
-        window.setTimeout(() => {
-          button.textContent = "Add to bag";
-        }, 900);
-      });
-    });
-
-    signup.addEventListener("submit", (event) => {
-      event.preventDefault();
-      signup.querySelector("button").textContent = "Joined";
-    });
-
-    const updateHeaderVisibility = () => {
-      if (!siteHeader) {
-        return;
-      }
-
-      const currentScrollY = window.scrollY;
-      const isScrollingDown = currentScrollY > lastScrollY;
-
-      if (isScrollingDown && currentScrollY > 80) {
-        siteHeader.classList.add("is-hidden");
-      } else {
-        siteHeader.classList.remove("is-hidden");
-      }
-
-      lastScrollY = Math.max(currentScrollY, 0);
-    };
-
-    window.addEventListener("scroll", updateHeaderVisibility, { passive: true });
-  </script>
+  <script src="client/js/api.js"></script>
+  <script src="client/js/products.js"></script>
+  <script src="client/js/cart.js"></script>
+  <script src="client/js/auth.js"></script>
+  <script src="client/js/checkout.js"></script>
+  <script src="client/js/app.js"></script>
 </body>
 </html>
