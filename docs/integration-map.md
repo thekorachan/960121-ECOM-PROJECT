@@ -26,14 +26,14 @@ This document explains the frontend-backend integration plan for the 960121 e-co
 | `POST` | `/api/register` | `window.api.register()` in `js/api.js` | Create a user account. | frontend-only |
 | `POST` | `/api/login` | `window.api.login()` in `js/api.js` | Login and receive a JWT/session token. | frontend-only |
 | `POST` | `/api/checkout` | `window.api.checkout()` in `js/api.js` and `window.checkoutService.checkout()` in `js/checkout.js` | Place an order after backend validation. | frontend-only |
-| `GET` | `/api/products?keyword=&category=&minPrice=&maxPrice=` | planned catalog integration | Load filtered products for `products.html`. | planned |
+| `GET` | `/api/products?keyword=&category=&minPrice=&maxPrice=` | planned advanced catalog filters | Load filtered products for `products.html`. | planned |
 
 ## 4. Request/Response Map
 
 ### `GET /api/products`
 
-- Frontend caller: `window.api.getProducts()` in `js/api.js`; used by `window.productService.loadProducts()` in `js/products.js`.
-- Current UI usage: `index.html` loads `js/api.js`, `js/products.js`, `js/cart.js`, and `js/app.js`, so the home page can replace static product cards with database products.
+- Frontend caller: `window.api.getProducts()` in `js/api.js`; used by `window.productService.loadProducts()` in `js/products.js` and `loadProductsFromApi()` in `js/catalog.js`.
+- Current UI usage: `index.html` loads `js/api.js`, `js/products.js`, `js/cart.js`, and `js/app.js`, so the home page can replace static product cards with database products. `products.html` now loads `js/api.js` before `js/catalog.js`, allowing the catalog page to fetch database products from the same endpoint.
 - Request payload: none.
 - Response payload:
 
@@ -57,7 +57,7 @@ This document explains the frontend-backend integration plan for the 960121 e-co
 
 - localStorage effect: none directly. If the user clicks "Add to bag", `cartService.addItem()` saves the selected product to `shopping_cart`.
 - Current status: implemented.
-- Integration note: `products.html` currently loads `js/catalog.js`, which uses static mock data instead of this endpoint.
+- Integration note: `js/catalog.js` normalizes database fields such as `id`, `name`, `description`, `price`, `compare_price`, `image_url`, `category`, `rating`, `review_count`, and `stock` into the existing catalog card format. Static catalog data is still kept as a fallback if the API fails or returns no products.
 
 ### `POST /api/payments/promptpay`
 
@@ -243,13 +243,13 @@ Planned auth continuity flow:
 
 ## 6. Integration Risks / Missing Work
 
-- `products.html` does not use `/api/products` yet; it renders static catalog data from `js/catalog.js`.
+- Advanced catalog filters are still future work; `products.html` can load `/api/products`, but keyword, category, and price query filters are not connected to the database yet.
 - `/api/register`, `/api/login`, and `/api/checkout` are declared in `js/api.js` but are not implemented in `server.js`.
 - `js/api.js` does not currently support JWT headers.
 - Checkout UI validates form data, but order creation is not connected to the backend checkout endpoint.
 - Backend checkout still needs the Gatekeeper Pattern: re-check product IDs, prices, stock, and totals on the server.
 - Backend checkout should use SQL transactions so failed checkout steps do not leave partial order data.
-- Product filtering is currently frontend/static on `products.html`; database-backed keyword, category, and price filtering is planned.
+- Database-backed keyword, category, and price filtering is planned for a future commit.
 - Some payment calls in `js/checkout-page.js` use direct `fetch()` instead of the central `window.api` client.
 
 ## 7. Suggested Next Commits
