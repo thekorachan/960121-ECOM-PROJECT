@@ -79,6 +79,7 @@
 
   const escapeHtml = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   const formatPrice = (value) => `$${Math.round(Number(value) || 0).toLocaleString("en-US")}`;
+  const canUseFallbackProducts = () => window.location.protocol === "file:" || /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(window.location.origin);
 
   const getProductImage = (product, index) => {
     const image = product.image_url || product.image || "";
@@ -116,6 +117,10 @@
 
   const loadProductsFromApi = async () => {
     if (!window.api || !window.api.getProducts) {
+      if (!canUseFallbackProducts()) {
+        throw new Error("Product API is not available.");
+      }
+
       return fallbackProducts;
     }
 
@@ -126,10 +131,38 @@
         return apiProducts.map(normalizeApiProduct);
       }
     } catch (error) {
+      if (!canUseFallbackProducts()) {
+        throw error;
+      }
+
       return fallbackProducts;
     }
 
+    if (!canUseFallbackProducts()) {
+      throw new Error("No products were returned from the database.");
+    }
+
     return fallbackProducts;
+  };
+
+  const showCatalogError = (message) => {
+    const grid = document.querySelector("#products-grid");
+    const count = document.querySelector("#products-count");
+    const filterCount = document.querySelector("[data-filter-count]");
+
+    if (grid) {
+      grid.innerHTML = `<p class="catalog-empty">${escapeHtml(message)}</p>`;
+    }
+
+    if (count) {
+      count.textContent = "Unable to load items";
+    }
+
+    if (filterCount) {
+      filterCount.textContent = "0 Items";
+    }
+
+    setLoader(false);
   };
 
   const updateCount = () => {
@@ -294,7 +327,13 @@
   };
 
   const init = async () => {
-    products = await loadProductsFromApi();
+    try {
+      products = await loadProductsFromApi();
+    } catch (error) {
+      showCatalogError(error.message || "Unable to load database products.");
+      return;
+    }
+
     visibleProducts = [...products];
     render();
     const loadMoreIfNearBottom = () => {

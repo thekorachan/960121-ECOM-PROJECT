@@ -2,8 +2,22 @@
   "use strict";
 
   const API_BASE_URL = "";
+  const LOCAL_API_BASE_URL = "http://localhost:3000";
   const AUTH_TOKEN_KEY = "auth_token";
   const AUTH_USER_KEY = "auth_user";
+
+  const getApiBaseUrls = () => {
+    const baseUrls = [API_BASE_URL];
+    const origin = window.location.origin;
+    const isLocalApi = origin === LOCAL_API_BASE_URL;
+    const isLocalStaticServer = /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+
+    if (!isLocalApi && (isLocalStaticServer || origin === "null")) {
+      baseUrls.push(LOCAL_API_BASE_URL);
+    }
+
+    return baseUrls;
+  };
 
   const getAuthToken = () => window.localStorage.getItem(AUTH_TOKEN_KEY);
 
@@ -34,24 +48,33 @@
   const request = async (endpoint, options = {}) => {
     const token = getAuthToken();
     const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+    let lastError;
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders,
-        ...(options.headers || {}),
-      },
-      ...options,
-    });
+    for (const baseUrl of getApiBaseUrls()) {
+      try {
+        const response = await fetch(`${baseUrl}${endpoint}`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+            ...(options.headers || {}),
+          },
+          ...options,
+        });
 
-    const data = await response.json().catch(() => null);
+        const data = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      const message = data && data.message ? data.message : "API request failed";
-      throw new Error(message);
+        if (!response.ok) {
+          const message = data && data.message ? data.message : "API request failed";
+          throw new Error(message);
+        }
+
+        return data;
+      } catch (error) {
+        lastError = error;
+      }
     }
 
-    return data;
+    throw lastError || new Error("API request failed");
   };
 
   window.api = {

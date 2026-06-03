@@ -21,6 +21,9 @@
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
 
+  const canUseDomFallback = () =>
+    window.location.protocol === "file:" || /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(window.location.origin);
+
   const getImageUrl = (product) => {
     const image = product.image_url || product.image || "";
 
@@ -118,6 +121,19 @@
     }
   };
 
+  const showProductError = (message) => {
+    const grid = document.querySelector(".product-grid");
+    const count = document.querySelector("#products-count");
+
+    if (grid) {
+      grid.innerHTML = `<p class="catalog-empty">${escapeHtml(message)}</p>`;
+    }
+
+    if (count) {
+      count.textContent = "Unable to load items";
+    }
+  };
+
   const findCardProduct = (button) => {
     const card = button.closest(".product-card");
 
@@ -144,6 +160,11 @@
 
   const loadProducts = async () => {
     if (!window.api || !window.api.getProducts) {
+      if (!canUseDomFallback()) {
+        showProductError("Product API is not available.");
+        return [];
+      }
+
       const domProducts = getProductsFromDom();
       updateProductCount(domProducts);
       return domProducts;
@@ -157,9 +178,19 @@
         return products.map(normalizeProduct);
       }
     } catch (error) {
+      if (!canUseDomFallback()) {
+        showProductError(error.message || "Unable to load database products.");
+        return [];
+      }
+
       const domProducts = getProductsFromDom();
       updateProductCount(domProducts);
       return domProducts;
+    }
+
+    if (!canUseDomFallback()) {
+      showProductError("No products were returned from the database.");
+      return [];
     }
 
     const domProducts = getProductsFromDom();

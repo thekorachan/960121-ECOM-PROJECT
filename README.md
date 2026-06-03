@@ -78,6 +78,10 @@ Product cards are loaded from:
 http://localhost:3000/api/products
 ```
 
+If you open the HTML with the VS Code Live Server extension, keep this Node server running too. Live Server only serves static files, so the browser falls back to `http://localhost:3000/api/products` for database products.
+
+For Vercel deployment, add the same `DATABASE_URL` environment variable in the Vercel project settings. The deployed website loads products from `/api/products`.
+
 ## Work Log
 
 ### 01/06/2026

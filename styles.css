@@ -802,6 +802,16 @@ h2 {
   text-transform: uppercase;
 }
 
+.catalog-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 32px 16px;
+  color: #555555;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .catalog-copy {
   display: grid;
   gap: 14px;
