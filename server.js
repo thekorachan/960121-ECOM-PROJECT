@@ -58,8 +58,8 @@ app.get("/api/products", async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT
-        id,
-        name,
+        products_id AS id,
+        products_name AS name,
         description,
         price,
         compare_price,
@@ -69,9 +69,9 @@ app.get("/api/products", async (req, res) => {
         is_active,
         image_url,
         category
-      FROM products
+      FROM Products
       WHERE is_active = true
-      ORDER BY id DESC
+      ORDER BY products_id DESC
     `);
 
     res.json(rows);

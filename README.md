@@ -36,13 +36,13 @@ PORT=3000
 
 Do not upload the real `.env` file to GitHub because it contains the database password.
 
-3. Make sure the Railway MySQL database has a `products` table.
+3. Make sure the Railway MySQL database has a `Products` table.
 
 Required columns used by the website:
 
 ```txt
-id
-name
+products_id
+products_name
 description
 price
 compare_price
@@ -88,7 +88,7 @@ What was done:
 - Added `server.js` using Node.js and Express.
 - Used `mysql2` to connect to the Railway MySQL database.
 - Used `dotenv` to load the database connection string from `.env`.
-- Added `/api/products` endpoint to read product data from the `products` table.
+- Added `/api/products` endpoint to read product data from the `Products` table.
 - Updated `products.js` so product cards can be rendered from API data.
 - Updated `app.js` to render products when the page loads.
 - Fixed script paths in `index.html` from `client/js/...` to `js/...`.
@@ -154,3 +154,102 @@ Current note:
 - The Login and Sign up system now uses backend SQL CRUD operations.
 - Passwords are currently stored as plain text for simple classroom CRUD testing.
 - For real production use, passwords should be changed to password hashes with bcrypt.
+
+### 04/06/2026
+
+What was planned / updated:
+
+1. Changed the product database table from `products` to `Products`.
+
+- The new `Products` table works the same as the old `products` table.
+- It still stores product data such as product name, description, price, stock, image URL, and category.
+- The backend `/api/products` endpoint now reads from `Products`.
+- The backend maps `products_id` to `id` and `products_name` to `name` so the frontend can still use the same product card code.
+
+2. Changed the checkout address plan.
+
+- The old plan was to let users type an address every time before checkout.
+- The new plan is to save user addresses in the `User_address` table.
+- During checkout, the system will use `user_id` to find the logged-in user and `address_id` to select the saved address.
+- This makes checkout faster because users can reuse saved addresses.
+
+3. Planned three new tables for cart and checkout.
+
+New tables:
+
+```txt
+User_cart
+User_cart_item
+User_checkout
+```
+
+Table relationship:
+
+```txt
+User_account
+  -> User_address
+  -> User_cart
+      -> User_cart_item
+          -> Products
+  -> User_checkout
+      -> User_address
+      -> User_cart
+```
+
+How each table works:
+
+- `User_account` stores user login/account data.
+- `User_address` stores saved addresses for each user.
+- `User_cart` stores the active cart that belongs to a user.
+- `User_cart_item` stores each product inside a cart.
+- `Products` stores product information.
+- `User_checkout` stores the final checkout/order record.
+
+Example flow:
+
+```txt
+User_account.user_id = 5
+```
+
+The same `user_id` can be used in other tables:
+
+```txt
+User_address.user_id = 5
+User_cart.user_id = 5
+User_checkout.user_id = 5
+```
+
+Example cart data:
+
+```txt
+User_cart
+cart_id | user_id | status
+10      | 5       | active
+```
+
+The cart can contain many products through `User_cart_item`:
+
+```txt
+User_cart_item
+cart_item_id | cart_id | product_id | quantity | unit_price
+1            | 10      | 3          | 2        | 590
+2            | 10      | 7          | 1        | 1200
+```
+
+This means user `5` has cart `10`, and cart `10` contains product `3` and product `7`.
+
+Example checkout data:
+
+```txt
+User_checkout
+checkout_id | user_id | cart_id | address_id | total_price | payment_type | status
+1           | 5       | 10      | 2          | 2380        | PromptPay    | pending
+```
+
+This means user `5` checked out cart `10` using saved address `2`.
+
+Current note:
+
+- Railway may not provide a simple Foreign Key button in the UI.
+- The project can still connect tables by storing related IDs such as `user_id`, `cart_id`, `product_id`, and `address_id`.
+- The backend should check these IDs before inserting checkout data.

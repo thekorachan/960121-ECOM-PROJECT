@@ -15,7 +15,7 @@ This document explains the frontend-backend integration plan for the 960121 e-co
 
 | Method | Path | Backend file | Purpose | Status |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/products` | `server.js` | Load active products from the Railway MySQL `products` table. | implemented |
+| `GET` | `/api/products` | `server.js` | Load active products from the Railway MySQL `Products` table. | implemented |
 | `POST` | `/api/register` | `server.js` | Create a user account in the `User_account` table. | implemented |
 | `POST` | `/api/login` | `server.js` | Validate user email/password and return session data. | implemented |
 | `POST` | `/api/payments/promptpay` | `server.js` | Create a PromptPay QR payment response for demo checkout. | implemented |
@@ -57,7 +57,7 @@ This document explains the frontend-backend integration plan for the 960121 e-co
 
 - localStorage effect: none directly. If the user clicks "Add to bag", `cartService.addItem()` saves the selected product to `shopping_cart`.
 - Current status: implemented.
-- Integration note: `js/catalog.js` normalizes database fields such as `id`, `name`, `description`, `price`, `compare_price`, `image_url`, `category`, `rating`, `review_count`, and `stock` into the existing catalog card format. Static catalog data is still kept as a fallback if the API fails or returns no products.
+- Integration note: `server.js` reads `products_id` and `products_name` from `Products`, then aliases them to `id` and `name` for the frontend. `js/catalog.js` normalizes database fields such as `id`, `name`, `description`, `price`, `compare_price`, `image_url`, `category`, `rating`, `review_count`, and `stock` into the existing catalog card format. Static catalog data is still kept as a fallback if the API fails or returns no products.
 
 ### `POST /api/payments/promptpay`
 
