@@ -123,6 +123,37 @@
     panel.classList.remove("is-error");
   };
 
+  const formatOrderTotal = (total) => {
+    if (total === undefined || total === null || total === "") {
+      return "";
+    }
+
+    return formatMoney(total);
+  };
+
+  const createOrderSummaryMarkup = ({ orderId, status, total } = {}) => {
+    const rows = [
+      ["Order ID", orderId],
+      ["Status", status],
+      ["Total", formatOrderTotal(total)],
+    ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+
+    if (!rows.length) {
+      return "";
+    }
+
+    return `
+      <dl class="checkout-order-summary">
+        ${rows.map(([label, value]) => `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    `;
+  };
+
   const getCheckoutForm = () => document.querySelector("#checkout-payment-form");
 
   const getField = (name) => getCheckoutForm()?.elements[name];
@@ -526,7 +557,12 @@
     updatePromptPayPanel(activePromptPayCharge);
     clearCompletedOrderCart();
     setCheckoutStatus("Order completed. Returning home...");
-    showCheckoutDialog("Order completed", "Your PromptPay payment has been marked complete. Thank you for your order.", "success");
+    showOrderSuccessSummary({
+      orderId: activePromptPayCharge.id,
+      status: activePromptPayCharge.status,
+      total: (Number(activePromptPayCharge.amount) || 0) / 100,
+      message: "Your PromptPay payment has been marked complete. Thank you for your order.",
+    });
     redirectToHomeAfterOrderComplete();
   };
 
@@ -947,7 +983,7 @@
     updatePlaceOrderState();
   };
 
-  const showCheckoutDialog = (title, message, type = "info") => {
+  const showCheckoutDialog = (title, message, type = "info", summaryMarkup = "") => {
     let dialog = document.querySelector("#checkout-info-dialog");
 
     if (!dialog) {
@@ -964,6 +1000,7 @@
           <span class="checkout-success-mark" aria-hidden="true"></span>
           <h2 id="checkout-info-title"></h2>
           <p id="checkout-info-message"></p>
+          <div id="checkout-info-summary"></div>
           <button type="button" data-checkout-info-close>Done</button>
         </div>
       `;
@@ -973,9 +1010,21 @@
     dialog.classList.toggle("is-success", type === "success");
     dialog.querySelector("#checkout-info-title").textContent = title;
     dialog.querySelector("#checkout-info-message").textContent = message;
+    dialog.querySelector("#checkout-info-summary").innerHTML = summaryMarkup;
     dialog.classList.add("is-open");
     dialog.setAttribute("aria-hidden", "false");
     dialog.querySelector(".checkout-info-panel")?.focus();
+  };
+
+  const showOrderSuccessSummary = ({ orderId, status = "placed", total, message } = {}) => {
+    const summaryMarkup = createOrderSummaryMarkup({ orderId, status, total });
+
+    showCheckoutDialog(
+      "Order placed",
+      message || "Your order has been received. Thank you for shopping with Monoform.",
+      "success",
+      summaryMarkup
+    );
   };
 
   const closeCheckoutDialog = () => {
@@ -1332,6 +1381,10 @@
   window.checkoutBackendStatus = {
     clear: clearBackendCheckoutStatus,
     set: setBackendCheckoutStatus,
+  };
+
+  window.checkoutOrderSummary = {
+    show: showOrderSuccessSummary,
   };
 
   setupCheckoutForm();
