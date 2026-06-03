@@ -91,9 +91,60 @@
 
     const openTriggers = document.querySelectorAll("[data-account-open]");
     const closeTriggers = document.querySelectorAll("[data-account-close]");
+    const accountNavTrigger = document.querySelector("[data-account-open][aria-controls='account-drawer']");
+    const defaultAccountLabel = accountNavTrigger ? accountNavTrigger.textContent : "Account";
+    const accountTabs = drawer.querySelector(".account-tabs");
     const tabButtons = drawer.querySelectorAll("[data-account-tab]");
     const panels = drawer.querySelectorAll("[data-account-panel]");
     const forms = drawer.querySelectorAll("[data-auth-form]");
+    const signedInPanel = document.createElement("section");
+    const signedInTitle = document.createElement("h3");
+    const signedInMeta = document.createElement("p");
+    const logoutButton = document.createElement("button");
+
+    signedInPanel.className = "account-panel";
+    signedInPanel.hidden = true;
+    signedInTitle.textContent = "You are signed in";
+    signedInMeta.className = "account-status is-success";
+    logoutButton.className = "account-submit";
+    logoutButton.type = "button";
+    logoutButton.textContent = "Log out";
+    signedInPanel.append(signedInTitle, signedInMeta, logoutButton);
+    drawer.querySelector(".account-drawer-body")?.append(signedInPanel);
+
+    const getUserDisplayName = (user) => {
+      if (!user) {
+        return "";
+      }
+
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+      return fullName || user.email || "";
+    };
+
+    const updateAccountState = () => {
+      const user = window.authService.getCurrentUser();
+      const isLoggedIn = window.authService.isLoggedIn();
+      const displayName = getUserDisplayName(user);
+
+      if (accountNavTrigger) {
+        accountNavTrigger.textContent = isLoggedIn && displayName
+          ? `Hi, ${displayName.split(" ")[0]}`
+          : defaultAccountLabel;
+      }
+
+      if (accountTabs) {
+        accountTabs.hidden = isLoggedIn;
+      }
+
+      panels.forEach((panel) => {
+        panel.hidden = isLoggedIn ? true : !panel.classList.contains("is-active");
+      });
+
+      signedInPanel.hidden = !isLoggedIn;
+      signedInMeta.textContent = displayName
+        ? `Signed in as ${displayName}.`
+        : "Your account session is active.";
+    };
 
     const setActiveTab = (tabName) => {
       tabButtons.forEach((button) => {
@@ -186,6 +237,8 @@
             status.classList.remove("is-error");
             status.classList.add("is-success");
           }
+
+          updateAccountState();
         } catch (error) {
           if (submitButton) {
             submitButton.textContent = originalText;
@@ -204,11 +257,20 @@
       });
     });
 
+    logoutButton.addEventListener("click", () => {
+      window.authService.logout();
+      forms.forEach((form) => form.reset());
+      setActiveTab("signin");
+      updateAccountState();
+    });
+
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && document.body.classList.contains("account-drawer-open")) {
         closeDrawer();
       }
     });
+
+    updateAccountState();
   };
 
   const init = async () => {
