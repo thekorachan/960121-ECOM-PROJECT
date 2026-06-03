@@ -21,36 +21,46 @@
     quantity: 1,
   };
 
-  let selectedPaymentMethod = "Credit / Debit Card";
+  let selectedPaymentMethod = "card";
   let activePromptPayCharge = null;
   let promptPayStatusTimer = null;
   let promptPayCompletionTimer = null;
   let orderCompleteRedirectTimer = null;
 
-  const cardPaymentMethod = "Credit / Debit Card";
+  const cardPaymentMethod = "card";
+
+  const paymentMethodLabels = {
+    card: "Credit / Debit Card",
+    apple_pay: "Apple Pay",
+    google_pay: "Google Pay",
+    weixin_pay: "Weixin Pay",
+    promptpay: "PromptPay",
+  };
 
   const alternatePaymentContent = {
-    "Apple Pay": {
+    apple_pay: {
       logo: "Apple Pay",
       message: "Apple Pay will open after your order details are confirmed.",
     },
-    "Google Pay": {
+    google_pay: {
       logo: "G Pay",
       message: "Google Pay will open after your order details are confirmed.",
     },
-    "Weixin Pay": {
+    weixin_pay: {
       logo: "Weixin Pay",
       message: "Weixin Pay will open after your order details are confirmed.",
     },
-    PromptPay: {
+    promptpay: {
       logo: "PromptPay",
       message: "Place your order to generate a PromptPay QR code.",
     },
   };
 
+  const getPaymentMethodLabel = (method) => paymentMethodLabels[method] || method;
+
   const isCardPaymentSelected = () => selectedPaymentMethod === cardPaymentMethod;
 
-  const isPromptPaySelected = () => selectedPaymentMethod === "PromptPay";
+  const isPromptPaySelected = () => selectedPaymentMethod === "promptpay";
 
   const getCartItems = () => {
     const items = window.cartState && Array.isArray(window.cartState.items) ? window.cartState.items : [];
@@ -669,9 +679,10 @@
     const alternateLogo = document.querySelector("[data-alternate-payment-logo]");
     const alternateMessage = document.querySelector("[data-alternate-payment-message]");
     const showCard = isCardPaymentSelected();
+    const selectedPaymentLabel = getPaymentMethodLabel(selectedPaymentMethod);
     const alternateContent = alternatePaymentContent[selectedPaymentMethod] || {
-      logo: selectedPaymentMethod,
-      message: `${selectedPaymentMethod} will open after your order details are confirmed.`,
+      logo: selectedPaymentLabel,
+      message: `${selectedPaymentLabel} will open after your order details are confirmed.`,
     };
 
     if (cardPanel) {
@@ -686,7 +697,7 @@
     }
 
     if (alternateTitle) {
-      alternateTitle.textContent = selectedPaymentMethod;
+      alternateTitle.textContent = selectedPaymentLabel;
     }
 
     if (alternateLogo) {
@@ -1214,7 +1225,7 @@
 
     updatePaymentPanels();
     updatePlaceOrderState();
-    setCheckoutStatus(`${selectedPaymentMethod} selected.`);
+    setCheckoutStatus(`${getPaymentMethodLabel(selectedPaymentMethod)} selected.`);
   };
 
   const continueCheckout = async () => {
@@ -1250,7 +1261,7 @@
       "Order ready",
       isCardPaymentSelected()
         ? "Your card payment details are valid. Payment processing is not connected yet."
-        : `${selectedPaymentMethod} is selected. Payment processing is not connected yet.`
+        : `${getPaymentMethodLabel(selectedPaymentMethod)} is selected. Payment processing is not connected yet.`
     );
   };
 
