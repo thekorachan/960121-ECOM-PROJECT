@@ -1580,6 +1580,36 @@ body.filter-drawer-open .filter-drawer {
   gap: 12px;
 }
 
+.account-profile-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 18px;
+  color: #222222;
+  font-size: 12px;
+}
+
+.account-profile-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e2e2e2;
+  padding-bottom: 8px;
+}
+
+.account-profile-list dt,
+.account-profile-list dd {
+  margin: 0;
+}
+
+.account-profile-list dt {
+  color: #6b6b6b;
+}
+
+.account-profile-list dd {
+  font-weight: 700;
+  text-align: right;
+}
+
 .account-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

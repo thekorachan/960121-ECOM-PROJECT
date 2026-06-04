@@ -100,16 +100,61 @@
     const signedInPanel = document.createElement("section");
     const signedInTitle = document.createElement("h3");
     const signedInMeta = document.createElement("p");
+    const profileList = document.createElement("dl");
+    const savedAddressTitle = document.createElement("h3");
+    const savedAddressEmpty = document.createElement("p");
+    const addressForm = document.createElement("form");
     const logoutButton = document.createElement("button");
 
     signedInPanel.className = "account-panel";
     signedInPanel.hidden = true;
     signedInTitle.textContent = "You are signed in";
     signedInMeta.className = "account-status is-success";
+    profileList.className = "account-profile-list";
+    savedAddressTitle.textContent = "Saved addresses";
+    savedAddressEmpty.className = "account-status";
+    savedAddressEmpty.textContent = "No saved addresses loaded yet. This section is ready for the future User_address API.";
+    addressForm.className = "account-form";
+    addressForm.dataset.addressForm = "prepared";
+    addressForm.innerHTML = `
+      <label>
+        <span>Address Line</span>
+        <input type="text" name="addressLine" autocomplete="street-address" placeholder=" ">
+      </label>
+      <div class="account-form-grid">
+        <label>
+          <span>City</span>
+          <input type="text" name="city" autocomplete="address-level2" placeholder=" ">
+        </label>
+        <label>
+          <span>Province</span>
+          <input type="text" name="province" autocomplete="address-level1" placeholder=" ">
+        </label>
+      </div>
+      <div class="account-form-grid">
+        <label>
+          <span>Postal Code</span>
+          <input type="text" name="postalCode" autocomplete="postal-code" placeholder=" ">
+        </label>
+        <label>
+          <span>Phone</span>
+          <input type="text" name="phone" autocomplete="tel" placeholder=" ">
+        </label>
+      </div>
+      <p class="account-status" aria-live="polite">Frontend preparation only. Fields match User_address: address_line, city, province, postal_code, and phone.</p>
+    `;
     logoutButton.className = "account-submit";
     logoutButton.type = "button";
     logoutButton.textContent = "Log out";
-    signedInPanel.append(signedInTitle, signedInMeta, logoutButton);
+    signedInPanel.append(
+      signedInTitle,
+      signedInMeta,
+      profileList,
+      savedAddressTitle,
+      savedAddressEmpty,
+      addressForm,
+      logoutButton
+    );
     drawer.querySelector(".account-drawer-body")?.append(signedInPanel);
 
     const getUserDisplayName = (user) => {
@@ -119,6 +164,27 @@
 
       const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
       return fullName || user.email || "";
+    };
+
+    const renderProfileList = (user) => {
+      const rows = [
+        ["First name", user?.firstName || "Not provided"],
+        ["Last name", user?.lastName || "Not provided"],
+        ["Email", user?.email || "Not provided"],
+      ];
+
+      profileList.innerHTML = "";
+
+      rows.forEach(([label, value]) => {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        const detail = document.createElement("dd");
+
+        term.textContent = label;
+        detail.textContent = value;
+        row.append(term, detail);
+        profileList.append(row);
+      });
     };
 
     const updateAccountState = () => {
@@ -144,6 +210,7 @@
       signedInMeta.textContent = displayName
         ? `Signed in as ${displayName}.`
         : "Your account session is active.";
+      renderProfileList(user);
     };
 
     const setActiveTab = (tabName) => {
@@ -260,8 +327,13 @@
     logoutButton.addEventListener("click", () => {
       window.authService.logout();
       forms.forEach((form) => form.reset());
+      addressForm.reset();
       setActiveTab("signin");
       updateAccountState();
+    });
+
+    addressForm.addEventListener("submit", (event) => {
+      event.preventDefault();
     });
 
     window.addEventListener("keydown", (event) => {
