@@ -15,7 +15,13 @@ const pool = mysql.createPool({
 });
 
 app.use(express.json());
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, {
+  setHeaders: (res, filePath) => {
+    if (/\.(?:html|css|js)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-store");
+    }
+  },
+}));
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -64,6 +70,7 @@ const formatUser = (user) => ({
 
 let userProfileColumnsReady = false;
 let userSavedItemsTableReady = false;
+let productReviewsTableReady = false;
 
 const ensureUserProfileColumns = async () => {
   if (userProfileColumnsReady) {
@@ -123,6 +130,29 @@ const ensureUserSavedItemsTable = async () => {
   userSavedItemsTableReady = true;
 };
 
+const ensureProductReviewsTable = async () => {
+  if (productReviewsTableReady) {
+    return;
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS \`Product_review\` (
+      review_id INT AUTO_INCREMENT PRIMARY KEY,
+      product_id INT NOT NULL,
+      user_id INT NOT NULL,
+      rating TINYINT NOT NULL,
+      review_text TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY product_user_review_unique (product_id, user_id),
+      INDEX product_review_product_idx (product_id),
+      INDEX product_review_user_idx (user_id)
+    )
+  `);
+
+  productReviewsTableReady = true;
+};
+
 const formatSavedItem = (item) => ({
   id: item.saved_item_id,
   userId: item.user_id,
@@ -133,6 +163,70 @@ const formatSavedItem = (item) => ({
   image: item.image_url || "",
   createdAt: item.created_at,
 });
+
+const formatReview = (review) => ({
+  id: review.review_id,
+  productId: review.product_id,
+  userId: review.user_id,
+  author: [review.first_name, review.last_name].filter(Boolean).join(" ").trim() || "Verified buyer",
+  rating: Number(review.rating) || 0,
+  text: review.review_text || "",
+  createdAt: review.created_at,
+  updatedAt: review.updated_at,
+});
+
+const hasPurchasedProduct = async (userId, productId) => {
+  const [rows] = await pool.query(
+    `SELECT 1
+     FROM \`User_checkout\` co
+     JOIN \`User_cart_item\` ci ON ci.cart_id = co.cart_id
+     WHERE co.user_id = ?
+       AND ci.product_id = ?
+       AND LOWER(COALESCE(co.status, '')) NOT IN ('cancelled', 'canceled', 'failed')
+     LIMIT 1`,
+    [userId, productId]
+  );
+
+  return rows.length > 0;
+};
+
+const resolveReviewUserId = async ({ userId, userEmail }) => {
+  const email = normalizeEmail(userEmail);
+
+  if (email) {
+    const [users] = await pool.query(
+      "SELECT user_id FROM `User_account` WHERE email = ? LIMIT 1",
+      [email]
+    );
+
+    if (users.length) {
+      return Number(users[0].user_id) || null;
+    }
+  }
+
+  return toInteger(userId);
+};
+
+const getReviewUserInput = (source = {}) => ({
+  userId: source.user_id || source.userId,
+  userEmail: source.user_email || source.userEmail || source.email,
+});
+
+const getReviewSummary = async (productId) => {
+  await ensureProductReviewsTable();
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS review_count, COALESCE(AVG(rating), 0) AS rating
+     FROM \`Product_review\`
+     WHERE product_id = ?`,
+    [productId]
+  );
+  const summary = rows[0] || {};
+
+  return {
+    rating: Number(summary.rating) || 0,
+    review_count: Number(summary.review_count) || 0,
+  };
+};
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
@@ -171,28 +265,132 @@ const createPromptPayPayment = ({ amount, currency }) => {
 
 app.get("/api/products", async (req, res) => {
   try {
+    await ensureProductReviewsTable();
     const [rows] = await pool.query(`
       SELECT
-        products_id AS id,
-        products_name AS name,
-        description,
-        price,
-        compare_price,
-        stock,
-        rating,
-        review_count,
-        is_active,
-        image_url,
-        category
-      FROM Products
-      WHERE is_active = true
-      ORDER BY products_id DESC
+        p.products_id AS id,
+        p.products_name AS name,
+        p.description,
+        p.price,
+        p.compare_price,
+        p.stock,
+        COALESCE(AVG(r.rating), 0) AS rating,
+        COUNT(r.review_id) AS review_count,
+        p.is_active,
+        p.image_url,
+        p.category
+      FROM Products p
+      LEFT JOIN Product_review r ON r.product_id = p.products_id
+      WHERE p.is_active = true
+      GROUP BY p.products_id, p.products_name, p.description, p.price, p.compare_price, p.stock, p.is_active, p.image_url, p.category
+      ORDER BY p.products_id DESC
     `);
 
-    res.json(rows);
+    res.json(rows.map((row) => ({
+      ...row,
+      rating: Number(row.rating) || 0,
+      review_count: Number(row.review_count) || 0,
+    })));
   } catch (error) {
     console.error("Failed to load products:", error);
     res.status(500).json({ message: "Failed to load products" });
+  }
+});
+
+app.get("/api/products/:id/reviews", async (req, res) => {
+  try {
+    await ensureProductReviewsTable();
+    const productId = toInteger(req.params.id);
+    const limit = Math.min(Math.max(toInteger(req.query.limit) || 3, 1), 50);
+    const offset = Math.max(toInteger(req.query.offset) || 0, 0);
+    const userId = await resolveReviewUserId(getReviewUserInput(req.query));
+
+    if (!productId) {
+      return res.status(400).json({ message: "Valid product id is required." });
+    }
+
+    const [reviews] = await pool.query(
+      `SELECT r.review_id, r.product_id, r.user_id, r.rating, r.review_text, r.created_at, r.updated_at,
+              u.first_name, u.last_name
+       FROM \`Product_review\` r
+       LEFT JOIN \`User_account\` u ON u.user_id = r.user_id
+       WHERE r.product_id = ?
+       ORDER BY r.updated_at DESC, r.review_id DESC
+       LIMIT ? OFFSET ?`,
+      [productId, limit, offset]
+    );
+    const [totalRows] = await pool.query(
+      "SELECT COUNT(*) AS total FROM `Product_review` WHERE product_id = ?",
+      [productId]
+    );
+    const summary = await getReviewSummary(productId);
+    const purchased = userId ? await hasPurchasedProduct(userId, productId) : false;
+    const [ownReviews] = userId
+      ? await pool.query(
+        "SELECT review_id FROM `Product_review` WHERE product_id = ? AND user_id = ? LIMIT 1",
+        [productId, userId]
+      )
+      : [[]];
+
+    res.json({
+      productId,
+      summary,
+      reviews: reviews.map(formatReview),
+      total: Number(totalRows[0]?.total) || 0,
+      canReview: Boolean(purchased),
+      purchased: Boolean(purchased),
+      hasReviewed: Boolean(ownReviews.length),
+    });
+  } catch (error) {
+    console.error("Failed to load product reviews:", error);
+    res.status(500).json({ message: "Failed to load reviews" });
+  }
+});
+
+app.post("/api/products/:id/reviews", async (req, res) => {
+  try {
+    await ensureProductReviewsTable();
+    const productId = toInteger(req.params.id);
+    const userId = toInteger(req.body.userId || req.body.user_id);
+    const rating = toInteger(req.body.rating);
+    const reviewText = String(req.body.text || req.body.reviewText || req.body.review_text || "").trim().slice(0, 2000);
+
+    if (!productId || !userId || !rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "product id, user id, and a 1-5 rating are required." });
+    }
+
+    if (!(await hasPurchasedProduct(userId, productId))) {
+      return res.status(403).json({ message: "Only verified buyers can review this item." });
+    }
+
+    await pool.query(
+      `INSERT INTO \`Product_review\` (product_id, user_id, rating, review_text)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         rating = VALUES(rating),
+         review_text = VALUES(review_text),
+         updated_at = CURRENT_TIMESTAMP`,
+      [productId, userId, rating, reviewText]
+    );
+    const [reviews] = await pool.query(
+      `SELECT r.review_id, r.product_id, r.user_id, r.rating, r.review_text, r.created_at, r.updated_at,
+              u.first_name, u.last_name
+       FROM \`Product_review\` r
+       LEFT JOIN \`User_account\` u ON u.user_id = r.user_id
+       WHERE r.product_id = ? AND r.user_id = ?
+       LIMIT 1`,
+      [productId, userId]
+    );
+    const summary = await getReviewSummary(productId);
+
+    res.status(201).json({
+      success: true,
+      summary,
+      review: reviews[0] ? formatReview(reviews[0]) : null,
+    });
+  } catch (error) {
+    console.error("Failed to save product review:", error);
+    res.status(500).json({ message: "Failed to save review" });
   }
 });
 
@@ -545,7 +743,7 @@ app.get("/api/user-addresses", async (req, res) => {
 
 app.post("/api/user-addresses", async (req, res) => {
   try {
-    const userId = toInteger(req.body.user_id || req.body.userId);
+    const userId = await resolveReviewUserId(getReviewUserInput(req.body));
     const addressLine = String(req.body.address_line || req.body.addressLine || "").trim();
     const city = String(req.body.city || "").trim();
     const province = String(req.body.province || "").trim();
@@ -622,8 +820,8 @@ app.get("/api/user-cart-items", async (req, res) => {
   try {
     const cartId = toInteger(req.query.cart_id || req.query.cartId);
     const sql = cartId
-      ? "SELECT * FROM `User_cart_item` WHERE cart_id = ? ORDER BY cart_item_id DESC"
-      : "SELECT * FROM `User_cart_item` ORDER BY cart_item_id DESC";
+      ? "SELECT * FROM `User_cart_item` WHERE cart_id = ? ORDER BY cart_id DESC, product_id DESC"
+      : "SELECT * FROM `User_cart_item` ORDER BY cart_id DESC, product_id DESC";
     const params = cartId ? [cartId] : [];
     const [rows] = await pool.query(sql, params);
     res.json(rows);

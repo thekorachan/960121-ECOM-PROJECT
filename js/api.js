@@ -102,6 +102,25 @@
       return request("/api/products");
     },
 
+    getProductReviews(productId, options = {}) {
+      const params = new URLSearchParams();
+
+      if (options.userId) params.set("user_id", options.userId);
+      if (options.userEmail) params.set("user_email", options.userEmail);
+      if (options.limit) params.set("limit", options.limit);
+      if (options.offset) params.set("offset", options.offset);
+
+      const query = params.toString();
+      return request(`/api/products/${encodeURIComponent(productId)}/reviews${query ? `?${query}` : ""}`);
+    },
+
+    saveProductReview(productId, review) {
+      return request(`/api/products/${encodeURIComponent(productId)}/reviews`, {
+        method: "POST",
+        body: JSON.stringify(review),
+      });
+    },
+
     register(userDetails) {
       return request("/api/register", {
         method: "POST",

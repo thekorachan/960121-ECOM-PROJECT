@@ -41,6 +41,23 @@
     return `$${price.toLocaleString("en-US")}`;
   };
 
+  const formatRating = (value) => (Number(value) || 0).toFixed(1).replace(/\.0$/, "");
+  const createStars = (rating) => {
+    const rounded = Math.round((Number(rating) || 0) * 2) / 2;
+
+    return Array.from({ length: 5 }, (_, index) => index + 1 <= rounded ? "★" : "☆").join("");
+  };
+
+  const createRatingMarkup = (product) => {
+    const reviewCount = Number(product.reviews) || 0;
+
+    if (!reviewCount) {
+      return "";
+    }
+
+    return `<div class="product-rating" aria-label="Rating ${formatRating(product.rating)} out of 5 from ${reviewCount} reviews"><span>${createStars(product.rating)}</span><small>(${reviewCount})</small></div>`;
+  };
+
   const getProductSearchText = (product) => [
     product.name,
     product.variant,
@@ -113,7 +130,7 @@
       description: product.description || "",
       badge: product.badge || (Number(product.stock) > 0 ? "In Stock" : ""),
       reviews: Number(product.review_count || product.reviews) || 0,
-      rating: Number(product.rating) || 4,
+      rating: Number(product.rating) || 0,
       stock: Number(product.stock) || 0,
       colorKey: getColorKey(product),
       colorKeys: getColorKeys(product),
@@ -140,6 +157,7 @@
             <span class="swatch white"></span>
             <span class="swatch"></span>
           </div>
+          ${createRatingMarkup(normalizedProduct)}
           <button class="add-button" type="button">Add to bag</button>
         </div>
       </article>
@@ -168,6 +186,8 @@
       colorKey: "white",
       colorKeys: ["white"],
       sizeKeys: defaultSizes,
+      reviews: 0,
+      rating: 0,
       quantity: 1,
     };
   };
@@ -281,6 +301,106 @@
     size: document.querySelector('[data-detail-option="size"].is-selected')?.dataset.optionValue || "",
   });
 
+  const getCurrentUser = () => window.api?.getAuthUser ? window.api.getAuthUser() : null;
+  const getProductId = (product) => Number(product.baseId || product.productId || product.product_id || product.id);
+
+  const renderReviewList = (payload, append = false) => {
+    const list = document.querySelector("[data-review-list]");
+    const moreButton = document.querySelector("[data-review-more]");
+    const summary = document.querySelector("[data-review-summary]");
+    const purchasedMarker = document.querySelector("[data-purchased-marker]");
+    const writeButton = document.querySelector("[data-review-write]");
+    const eligibility = document.querySelector("[data-review-eligibility]");
+    const form = document.querySelector("[data-review-form]");
+    const reviews = Array.isArray(payload?.reviews) ? payload.reviews : [];
+    const total = Number(payload?.total) || 0;
+    const renderedCount = (append ? list?.querySelectorAll(".product-review-item").length || 0 : 0) + reviews.length;
+
+    if (summary) {
+      const rating = Number(payload?.summary?.rating) || 0;
+      const reviewCount = Number(payload?.summary?.review_count) || 0;
+      summary.innerHTML = reviewCount
+        ? `<span aria-hidden="true">${createStars(rating)}</span><strong>${formatRating(rating)} / 5</strong><small>${reviewCount} reviews</small>`
+        : "<strong>No reviews yet</strong><small>Be the first verified buyer to review this item.</small>";
+    }
+
+    if (purchasedMarker) purchasedMarker.hidden = !payload?.purchased;
+    if (form) form.hidden = true;
+    if (writeButton) {
+      writeButton.hidden = !payload?.canReview;
+      writeButton.textContent = payload?.hasReviewed ? "Edit review" : "Write a review";
+    }
+    if (eligibility) {
+      eligibility.hidden = Boolean(payload?.canReview);
+      const user = getCurrentUser();
+      eligibility.textContent = payload?.purchased
+        ? ""
+        : user?.email
+          ? `You are signed in as ${user.email}. We could not verify a purchase for this account yet.`
+          : "Sign in with the account used for purchase to review this item.";
+    }
+
+    const markup = reviews.map((review) => `
+      <article class="product-review-item">
+        <div><strong>${escapeHtml(review.author || "Verified buyer")}</strong><span aria-label="${escapeHtml(String(review.rating))} out of 5 stars">${createStars(review.rating)}</span></div>
+        ${review.text ? `<p>${escapeHtml(review.text)}</p>` : ""}
+        <small>${escapeHtml(String(review.updatedAt || review.createdAt || "").slice(0, 10))}</small>
+      </article>
+    `).join("");
+
+    if (list) {
+      if (!append) {
+        list.innerHTML = markup || '<p class="product-review-empty">No reviews yet.</p>';
+      } else if (markup) {
+        list.insertAdjacentHTML("beforeend", markup);
+      }
+    }
+
+    if (moreButton) {
+      moreButton.hidden = renderedCount >= total;
+      moreButton.dataset.reviewOffset = String(renderedCount);
+    }
+  };
+
+  const loadProductReviews = async (product, offset = 0) => {
+    const productId = getProductId(product);
+    const user = getCurrentUser();
+    const list = document.querySelector("[data-review-list]");
+
+    if (!productId || !window.api?.getProductReviews) {
+      if (list) list.innerHTML = '<p class="product-review-empty">Reviews are unavailable.</p>';
+      return null;
+    }
+
+    if (list && !offset) {
+      list.textContent = "Loading reviews...";
+    }
+
+    try {
+      const payload = await window.api.getProductReviews(productId, {
+        userId: user?.id,
+        userEmail: user?.email,
+        limit: 3,
+        offset,
+      });
+
+      renderReviewList(payload, offset > 0);
+      return payload;
+    } catch (error) {
+      if (list && !offset) list.innerHTML = '<p class="product-review-empty">Could not load reviews.</p>';
+      return null;
+    }
+  };
+
+  const updateProductReviewSummary = (product, payload) => {
+    const productId = String(getProductId(product));
+    const rating = Number(payload?.summary?.rating) || 0;
+    const reviews = Number(payload?.summary?.review_count) || 0;
+    const updatedProducts = loadedProducts.map((item) => String(getProductId(item)) === productId ? { ...item, rating, reviews } : item);
+
+    renderProducts(updatedProducts);
+  };
+
   const updateDetailAddState = () => {
     const selected = getSelectedOptions();
     const addButton = document.querySelector("[data-detail-add]");
@@ -349,6 +469,7 @@
 
     const sizes = (normalizedProduct.sizeKeys || defaultSizes).map((size) => `<button type="button" data-detail-option="size" data-option-value="${escapeHtml(size)}" aria-pressed="false">${escapeHtml(size)}</button>`).join("");
     const stockText = Number(normalizedProduct.stock) > 0 ? `${Number(normalizedProduct.stock)} in stock` : normalizedProduct.badge || "Available";
+    const reviewCount = Number(normalizedProduct.reviews) || 0;
 
     content.innerHTML = `
       <div class="product-detail-media">
@@ -364,10 +485,8 @@
         </div>
         <div class="product-price-line">${createPriceMarkup(normalizedProduct)}</div>
         <p class="product-detail-description">${escapeHtml(normalizedProduct.description || normalizedProduct.variant || "Clean everyday shape with an easy MONOFORM fit.")}</p>
-        <div class="product-detail-rating" aria-label="Rating ${Number(normalizedProduct.rating).toFixed(1)} out of 5">
-          <span aria-hidden="true">★★★★★</span>
-          <strong>${Number(normalizedProduct.rating).toFixed(1).replace(/\.0$/, "")} / 5</strong>
-          <small>${Number(normalizedProduct.reviews) || 0} reviews</small>
+        <div class="product-detail-rating" data-review-summary aria-label="${reviewCount ? `Rating ${formatRating(normalizedProduct.rating)} out of 5` : "No reviews yet"}">
+          ${reviewCount ? `<span aria-hidden="true">${createStars(normalizedProduct.rating)}</span><strong>${formatRating(normalizedProduct.rating)} / 5</strong><small>${reviewCount} reviews</small>` : "<strong>No reviews yet</strong><small>Be the first verified buyer to review this item.</small>"}
         </div>
         <section class="product-detail-section" aria-label="Available colors">
           <h3>Color</h3>
@@ -381,7 +500,39 @@
         <div class="product-detail-meta">
           <p><span>Availability</span>${escapeHtml(stockText)}</p>
         </div>
-        <button class="product-detail-add" type="button" data-detail-add disabled>Add to bag</button>
+        <section class="product-detail-section product-review-section" aria-label="Customer reviews">
+          <div class="product-review-heading">
+            <h3>Reviews</h3>
+            <span data-purchased-marker hidden>Purchased</span>
+          </div>
+          <button class="product-review-write" type="button" data-review-write hidden>Write a review</button>
+          <div class="product-review-list" data-review-list>Loading reviews...</div>
+          <button class="product-review-more" type="button" data-review-more hidden>View more</button>
+          <p class="product-review-empty" data-review-eligibility hidden></p>
+          <form class="product-review-form" data-review-form hidden>
+            <fieldset class="product-review-rating">
+              <legend>Rating</legend>
+              <div class="product-review-rating-options">
+                <label><input type="radio" name="rating" value="5" checked required aria-label="5 out of 5 stars"><span aria-hidden="true">★</span></label>
+                <label><input type="radio" name="rating" value="4" aria-label="4 out of 5 stars"><span aria-hidden="true">★</span></label>
+                <label><input type="radio" name="rating" value="3" aria-label="3 out of 5 stars"><span aria-hidden="true">★</span></label>
+                <label><input type="radio" name="rating" value="2" aria-label="2 out of 5 stars"><span aria-hidden="true">★</span></label>
+                <label><input type="radio" name="rating" value="1" aria-label="1 out of 5 stars"><span aria-hidden="true">★</span></label>
+              </div>
+            </fieldset>
+            <label class="product-review-text">
+              <span>Review</span>
+              <textarea name="text" rows="3" maxlength="2000" placeholder="Share your thoughts"></textarea>
+            </label>
+            <div class="product-review-submit-row">
+              <button type="submit">Post review</button>
+              <p data-review-form-status aria-live="polite"></p>
+            </div>
+          </form>
+        </section>
+        <div class="product-detail-actions">
+          <button class="product-detail-add" type="button" data-detail-add disabled>Add to bag</button>
+        </div>
       </div>
     `;
 
@@ -389,7 +540,84 @@
     document.body.classList.add("product-detail-open");
     drawer.setAttribute("aria-hidden", "false");
     drawer.focus();
+    loadProductReviews(normalizedProduct, 0);
     return true;
+  };
+
+  const submitProductReview = async (form) => {
+    const drawer = document.querySelector("#product-detail-drawer");
+    const product = drawer?.dataset.product ? JSON.parse(drawer.dataset.product) : null;
+    const user = getCurrentUser();
+    const status = form.querySelector("[data-review-form-status]");
+    const productId = product ? getProductId(product) : null;
+
+    if (!user?.id || !productId || !window.api?.saveProductReview) {
+      if (status) status.textContent = "Sign in and purchase this item before reviewing.";
+      return;
+    }
+
+    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if (submitButton) submitButton.disabled = true;
+    if (status) status.textContent = "Saving review...";
+
+    try {
+      await window.api.saveProductReview(productId, {
+        userId: user.id,
+        userEmail: user.email,
+        rating: Number(formData.get("rating")),
+        text: String(formData.get("text") || ""),
+      });
+      form.reset();
+      if (status) status.textContent = "Review saved.";
+      const payload = await loadProductReviews(product, 0);
+      if (payload) {
+        updateProductReviewSummary(product, payload);
+      }
+    } catch (error) {
+      if (status) status.textContent = error.message || "Could not save review.";
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  };
+
+  const paintReviewStars = (container, rating, className) => {
+    if (!container) return;
+
+    container.querySelectorAll("label").forEach((label) => {
+      const value = Number(label.querySelector('input[name="rating"]')?.value) || 0;
+      const isActive = value <= rating;
+      const star = label.querySelector("span");
+      label.classList.toggle(className, isActive);
+      label.style.setProperty("transform", isActive ? `scale(${className === "is-preview" ? "1.14" : "1.04"})` : "scale(1)", "important");
+      label.style.setProperty("width", isActive ? `${className === "is-preview" ? "38" : "34"}px` : "32px", "important");
+      label.style.setProperty("height", isActive ? `${className === "is-preview" ? "40" : "36"}px` : "34px", "important");
+
+      if (!star) return;
+
+      star.style.setProperty("color", isActive ? "#9c6b10" : "#c8c8c8", "important");
+      star.style.setProperty("-webkit-text-fill-color", isActive ? "#9c6b10" : "#c8c8c8", "important");
+      star.style.setProperty("text-shadow", isActive ? "0 3px 8px rgba(156, 107, 16, 0.24)" : "none", "important");
+      star.style.setProperty("transform", isActive ? `scale(${className === "is-preview" ? "1.18" : "1.06"})` : "scale(1)", "important");
+      star.style.setProperty("font-size", isActive ? `${className === "is-preview" ? "30" : "27"}px` : "25px", "important");
+    });
+  };
+
+  const clearReviewStarPreview = (container) => {
+    if (!container) return;
+
+    container.classList.remove("is-previewing");
+    container.querySelectorAll("label").forEach((label) => label.classList.remove("is-preview"));
+    updateReviewStarSelection(container);
+  };
+
+  const updateReviewStarSelection = (container) => {
+    if (!container) return;
+
+    const rating = Number(container.querySelector('input[name="rating"]:checked')?.value) || 0;
+    container.querySelectorAll("label").forEach((label) => label.classList.remove("is-selected"));
+    paintReviewStars(container, rating, "is-selected");
   };
 
   document.addEventListener("click", (event) => {
@@ -405,6 +633,26 @@
       return;
     }
 
+    if (event.target.closest("[data-review-more]")) {
+      const drawer = document.querySelector("#product-detail-drawer");
+      const product = drawer?.dataset.product ? JSON.parse(drawer.dataset.product) : null;
+      const offset = Number(event.target.closest("[data-review-more]").dataset.reviewOffset) || 0;
+
+      if (product) {
+        loadProductReviews(product, offset);
+      }
+
+      return;
+    }
+
+    if (event.target.closest("[data-review-write]")) {
+      const form = document.querySelector("[data-review-form]");
+      form.hidden = false;
+      updateReviewStarSelection(form.querySelector(".product-review-rating-options"));
+      form.querySelector("textarea")?.focus();
+      return;
+    }
+
     if (event.target.closest("[data-detail-add]")) {
       const drawer = document.querySelector("#product-detail-drawer");
       const savedProduct = drawer?.dataset.product ? JSON.parse(drawer.dataset.product) : null;
@@ -414,6 +662,45 @@
         window.cartService.openBagDrawer();
       }
     }
+  });
+
+  document.addEventListener("mouseover", (event) => {
+    const label = event.target.closest(".product-review-rating-options label");
+
+    if (!label) return;
+
+    const container = label.closest(".product-review-rating-options");
+    const rating = Number(label.querySelector('input[name="rating"]')?.value) || 0;
+    container.classList.add("is-previewing");
+    container.querySelectorAll("label").forEach((item) => item.classList.remove("is-preview"));
+    paintReviewStars(container, rating, "is-preview");
+  });
+
+  document.addEventListener("mouseout", (event) => {
+    const container = event.target.closest(".product-review-rating-options");
+
+    if (!container || container.contains(event.relatedTarget)) return;
+
+    clearReviewStarPreview(container);
+  });
+
+  document.addEventListener("change", (event) => {
+    const input = event.target.closest('.product-review-rating-options input[name="rating"]');
+
+    if (!input) return;
+
+    updateReviewStarSelection(input.closest(".product-review-rating-options"));
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-review-form]");
+
+    if (!form) {
+      return;
+    }
+
+    event.preventDefault();
+    submitProductReview(form);
   });
 
   window.addEventListener("keydown", (event) => {
