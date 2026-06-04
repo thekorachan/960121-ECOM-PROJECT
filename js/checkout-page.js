@@ -63,10 +63,17 @@
 
   const formatThaiBaht = (value) => thbCurrency.format(Number(value) || 0);
 
-  const getPromptPayAmount = (items) => Math.round(getSubtotal(items) * 100);
-
   const getSubtotal = (items) =>
     items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
+
+  const getPromptPayAmount = (items) => Math.round(getSubtotal(items) * 100);
+
+  const getPromptPayAmountPath = (amount) => {
+    const baht = (Number(amount) || 0) / 100;
+    return Number.isInteger(baht) ? String(baht) : baht.toFixed(2);
+  };
+
+  const getPromptPayQrUrl = (amount) => `https://promptpay.io/0931498129/${getPromptPayAmountPath(amount)}.png`;
 
   const getItemCount = (items) =>
     items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
@@ -502,7 +509,7 @@
     qrImage.src = charge.qr_image;
     amount.textContent = formatThaiBaht((Number(charge.amount) || 0) / 100);
     status.textContent = `Status: ${charge.status || "pending"}`;
-    expires.textContent = charge.expires_at ? `Expires: ${new Date(charge.expires_at).toLocaleString()}` : "Expires within 24 hours";
+    expires.textContent = charge.expires_at ? `Expires: ${new Date(charge.expires_at).toLocaleString()}` : "Completes in 10 seconds";
     note.textContent = charge.demo
       ? "Demo QR shown for preview only. This QR is not connected to a live payment provider."
       : "Scan the QR code with your banking app to pay by PromptPay.";
@@ -561,7 +568,7 @@
     clearCompletedOrderCart();
     setCheckoutStatus("Order completed. Returning home...");
     showOrderSuccessSummary({
-      orderId: activePromptPayCharge.id,
+      orderId: activePromptPayCharge.orderId || activePromptPayCharge.id,
       status: activePromptPayCharge.status,
       total: (Number(activePromptPayCharge.amount) || 0) / 100,
       message: "Your PromptPay payment has been marked complete. Thank you for your order.",
@@ -627,37 +634,27 @@
     promptPayStatusTimer = window.setInterval(refreshPromptPayStatus, 5000);
   };
 
-  const createPromptPayPayment = async (items) => {
+  const createPromptPayPayment = async (items, orderId) => {
     const amount = getPromptPayAmount(items);
 
-    if (amount < 2000 || amount > 15000000) {
-      throw new Error("PromptPay total must be between THB20.00 and THB150,000.00.");
+    if (amount <= 0) {
+      throw new Error("PromptPay total must be greater than THB0.00.");
     }
 
-    const response = await fetch(window.api.getApiUrl("/api/payments/promptpay"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        amount,
-        currency: "THB",
-      }),
-    });
-
-    const payment = await response.json();
-
-    if (!response.ok) {
-      throw new Error(payment.message || "Unable to create PromptPay payment.");
-    }
+    const payment = {
+      id: `promptpay_${Date.now()}`,
+      orderId,
+      status: "pending",
+      amount,
+      currency: "THB",
+      qr_image: getPromptPayQrUrl(amount),
+      demo: false,
+      poll: false,
+    };
 
     activePromptPayCharge = payment;
     updatePromptPayPanel(payment);
-    if (payment.poll === true) {
-      startPromptPayStatusPolling();
-    } else {
-      startPromptPayCompletionCountdown();
-    }
+    startPromptPayCompletionCountdown();
     return payment;
   };
 
@@ -1320,6 +1317,11 @@
     const items = window.cartState && Array.isArray(window.cartState.items) ? window.cartState.items : [];
     const user = getCurrentUser();
 
+    if (isPromptPaySelected() && activePromptPayCharge?.status === "pending") {
+      setCheckoutStatus("PromptPay QR is already active. Order completes when the countdown finishes.");
+      return;
+    }
+
     if (!validateCheckoutForm(true)) {
       updatePlaceOrderState();
       setCheckoutStatus("Complete billing and payment information before placing your order.", "error");
@@ -1355,6 +1357,12 @@
       const orderId = checkout.checkout_id || checkout.checkoutId;
       const status = checkout.status || "pending";
       const total = checkout.total_price ?? checkout.totalPrice ?? getSubtotal(items);
+
+      if (isPromptPaySelected()) {
+        await createPromptPayPayment(items, orderId);
+        setCheckoutStatus("Scan the PromptPay QR code. Order completes in 10 seconds.");
+        return;
+      }
 
       clearCompletedOrderCart();
       renderItems();
