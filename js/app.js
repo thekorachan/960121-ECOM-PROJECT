@@ -103,7 +103,9 @@
     const profileList = document.createElement("dl");
     const savedAddressTitle = document.createElement("h3");
     const savedAddressEmpty = document.createElement("p");
+    const addressList = document.createElement("dl");
     const addressForm = document.createElement("form");
+    const addressSubmitButton = document.createElement("button");
     const logoutButton = document.createElement("button");
 
     signedInPanel.className = "account-panel";
@@ -113,7 +115,8 @@
     profileList.className = "account-profile-list";
     savedAddressTitle.textContent = "Saved addresses";
     savedAddressEmpty.className = "account-status";
-    savedAddressEmpty.textContent = "No saved addresses loaded yet. This section is ready for the future User_address API.";
+    savedAddressEmpty.textContent = "No saved addresses saved yet.";
+    addressList.className = "account-profile-list";
     addressForm.className = "account-form";
     addressForm.dataset.addressForm = "prepared";
     addressForm.innerHTML = `
@@ -141,8 +144,12 @@
           <input type="text" name="phone" autocomplete="tel" placeholder=" ">
         </label>
       </div>
-      <p class="account-status" aria-live="polite">Frontend preparation only. Fields match User_address: address_line, city, province, postal_code, and phone.</p>
+      <p class="account-status" aria-live="polite" data-address-status>Ready to save a new address.</p>
     `;
+    addressSubmitButton.className = "account-submit";
+    addressSubmitButton.type = "submit";
+    addressSubmitButton.textContent = "Save address";
+    addressForm.append(addressSubmitButton);
     logoutButton.className = "account-submit";
     logoutButton.type = "button";
     logoutButton.textContent = "Log out";
@@ -152,6 +159,7 @@
       profileList,
       savedAddressTitle,
       savedAddressEmpty,
+      addressList,
       addressForm,
       logoutButton
     );
@@ -165,6 +173,29 @@
       const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
       return fullName || user.email || "";
     };
+
+    const getAddressStatus = () => addressForm.querySelector("[data-address-status]");
+
+    const setAddressStatus = (message, type = "") => {
+      const status = getAddressStatus();
+
+      if (!status) {
+        return;
+      }
+
+      status.textContent = message;
+      status.classList.toggle("is-success", type === "success");
+      status.classList.toggle("is-error", type === "error");
+    };
+
+    const normalizeAddress = (address) => ({
+      id: address.address_id || address.addressId || address.id,
+      addressLine: address.address_line || address.addressLine || "",
+      city: address.city || "",
+      province: address.province || "",
+      postalCode: address.postal_code || address.postalCode || "",
+      phone: address.phone || "",
+    });
 
     const renderProfileList = (user) => {
       const rows = [
@@ -185,6 +216,48 @@
         row.append(term, detail);
         profileList.append(row);
       });
+    };
+
+    const renderAddressList = (addresses = []) => {
+      addressList.innerHTML = "";
+      savedAddressEmpty.hidden = addresses.length > 0;
+
+      addresses.map(normalizeAddress).forEach((address, index) => {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        const detail = document.createElement("dd");
+        const addressParts = [
+          address.addressLine,
+          address.city,
+          address.province,
+          address.postalCode,
+          address.phone ? `Phone: ${address.phone}` : "",
+        ].filter(Boolean);
+
+        term.textContent = address.id ? `Address #${address.id}` : `Address ${index + 1}`;
+        detail.textContent = addressParts.join(", ");
+        row.append(term, detail);
+        addressList.append(row);
+      });
+    };
+
+    const loadSavedAddresses = async (user) => {
+      if (!user?.id) {
+        renderAddressList([]);
+        setAddressStatus("Sign in to load saved addresses.");
+        return;
+      }
+
+      setAddressStatus("Loading saved addresses...");
+
+      try {
+        const addresses = await window.api.getUserAddresses(user.id);
+        renderAddressList(Array.isArray(addresses) ? addresses : []);
+        setAddressStatus("Saved addresses loaded.", "success");
+      } catch (error) {
+        renderAddressList([]);
+        setAddressStatus(error.message || "Failed to load saved addresses.", "error");
+      }
     };
 
     const updateAccountState = () => {
@@ -211,6 +284,13 @@
         ? `Signed in as ${displayName}.`
         : "Your account session is active.";
       renderProfileList(user);
+
+      if (isLoggedIn) {
+        loadSavedAddresses(user);
+      } else {
+        renderAddressList([]);
+        setAddressStatus("Sign in to manage saved addresses.");
+      }
     };
 
     const setActiveTab = (tabName) => {
@@ -328,12 +408,45 @@
       window.authService.logout();
       forms.forEach((form) => form.reset());
       addressForm.reset();
+      renderAddressList([]);
       setActiveTab("signin");
       updateAccountState();
     });
 
-    addressForm.addEventListener("submit", (event) => {
+    addressForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const user = window.authService.getCurrentUser();
+
+      if (!user?.id) {
+        setAddressStatus("Please sign in before saving an address.", "error");
+        return;
+      }
+
+      const formData = new FormData(addressForm);
+
+      addressSubmitButton.disabled = true;
+      addressSubmitButton.textContent = "Saving...";
+      setAddressStatus("Saving address...");
+
+      try {
+        await window.api.createUserAddress({
+          userId: user.id,
+          addressLine: formData.get("addressLine"),
+          city: formData.get("city"),
+          province: formData.get("province"),
+          postalCode: formData.get("postalCode"),
+          phone: formData.get("phone"),
+        });
+
+        addressForm.reset();
+        setAddressStatus("Address saved.", "success");
+        await loadSavedAddresses(user);
+      } catch (error) {
+        setAddressStatus(error.message || "Failed to save address.", "error");
+      } finally {
+        addressSubmitButton.disabled = false;
+        addressSubmitButton.textContent = "Save address";
+      }
     });
 
     window.addEventListener("keydown", (event) => {
